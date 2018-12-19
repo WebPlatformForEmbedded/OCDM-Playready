@@ -110,12 +110,13 @@ private:
     KeyState m_eKeyState;
     DRM_CHAR m_rgchSessionID[CCH_BASE64_EQUIV(SIZEOF(DRM_ID)) + 1];
     DRM_BOOL m_fCommit;
-      
+
     DRM_BYTE *m_pbChallenge;
     DRM_DWORD m_cbChallenge;
-    DRM_CHAR *m_pchSilentURL;  
+    DRM_CHAR *m_pchSilentURL;
     IMediaKeySessionCallback *m_piCallback;
-   
+    uint8_t* m_Content;
+    uint32_t m_ContentSize;
 };
 
 } // namespace CDMi

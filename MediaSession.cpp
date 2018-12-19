@@ -162,15 +162,17 @@ bool parsePlayreadyInitializationData(const std::string& initData, std::string* 
 
 MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData)
     : m_poAppContext(nullptr)
-    , m_pbOpaqueBuffer(nullptr) 
+    , m_pbOpaqueBuffer(nullptr)
     , m_cbOpaqueBuffer(0)
     , m_pbRevocationBuffer(nullptr)
     , m_eKeyState(KEY_INIT)
     , m_fCommit(FALSE)
     , m_pbChallenge(nullptr)
     , m_cbChallenge(0)
-    , m_pchSilentURL(nullptr) 
-    , m_piCallback(nullptr) {
+    , m_pchSilentURL(nullptr)
+    , m_piCallback(nullptr)
+    , m_Content(nullptr)
+    , m_ContentSize(0) {
   DRM_RESULT dr = DRM_SUCCESS;
   DRM_ID oSessionID;
   DRM_DWORD cchEncodedSessionID = SIZEOF(m_rgchSessionID);
@@ -224,7 +226,7 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
 
   // The current state MUST be KEY_INIT otherwise error out.
   ChkBOOL(m_eKeyState == KEY_INIT, DRM_E_INVALIDARG);
-  return; 
+  return;
 
 ErrorExit:
   if (DRM_FAILED(dr)) {
@@ -237,7 +239,7 @@ ErrorExit:
 MediaKeySession::~MediaKeySession(void) {
 
   Drm_Uninitialize(m_poAppContext);
- 
+
   SAFE_OEM_FREE(m_pbChallenge);
   SAFE_OEM_FREE(m_pchSilentURL);
 
@@ -248,6 +250,10 @@ MediaKeySession::~MediaKeySession(void) {
   SAFE_OEM_FREE(m_poAppContext);
 
   m_eKeyState = KEY_CLOSED;
+
+  if (m_Content != nullptr) {
+    ::free(m_Content);
+  }
   printf("Destructing PlayReady Session [%p]\n", this);
 }
 
@@ -260,14 +266,14 @@ const char *MediaKeySession::GetKeySystem(void) const {
 }
 
 DRM_RESULT DRM_CALL MediaKeySession::_PolicyCallback(
-    const DRM_VOID *f_pvOutputLevelsData, 
-    DRM_POLICY_CALLBACK_TYPE f_dwCallbackType, 
+    const DRM_VOID *f_pvOutputLevelsData,
+    DRM_POLICY_CALLBACK_TYPE f_dwCallbackType,
     const DRM_VOID *f_pv) {
   return DRM_SUCCESS;
 }
 
 void MediaKeySession::Run(const IMediaKeySessionCallback *f_piMediaKeySessionCallback) {
-   
+
   if (f_piMediaKeySessionCallback) {
     m_piCallback = const_cast<IMediaKeySessionCallback *>(f_piMediaKeySessionCallback);
 
@@ -279,8 +285,8 @@ void MediaKeySession::Run(const IMediaKeySessionCallback *f_piMediaKeySessionCal
 }
 
 bool MediaKeySession::playreadyGenerateKeyRequest() {
-    
-  DRM_RESULT dr = DRM_SUCCESS; 
+
+  DRM_RESULT dr = DRM_SUCCESS;
   DRM_DWORD cchSilentURL = 0;
   DRM_ANSI_STRING dastrCustomData = EMPTY_DRM_STRING;
   // FIXME :  Check add case Play rights already acquired
@@ -291,7 +297,7 @@ bool MediaKeySession::playreadyGenerateKeyRequest() {
                                         sizeof(g_rgpdstrRights) / sizeof(DRM_CONST_STRING *),
                                          NULL,
                                          NULL, // FIXME : Custom data
-                                         0, // FIXME : Custon data size 
+                                         0, // FIXME : Custon data size
                                          NULL,
                                          &cchSilentURL,
                                          NULL,
@@ -321,7 +327,7 @@ bool MediaKeySession::playreadyGenerateKeyRequest() {
                                          sizeof(g_rgpdstrRights) / sizeof(DRM_CONST_STRING *),
                                          NULL,
                                          NULL, // FIXME : Custom data
-                                         0, // FIXME : Custon data size 
+                                         0, // FIXME : Custon data size
                                          m_pchSilentURL,
                                          &cchSilentURL,
                                          NULL,
@@ -426,17 +432,30 @@ CDMi_RESULT MediaKeySession::Decrypt(
     ivData[f_cbIV - i - 1] = temp;
   }
 
+  if (!m_Content) {
+    printf("%s: allocating %d\n", __FUNCTION__, payloadDataSize);
+    m_ContentSize = payloadDataSize;
+    m_Content = reinterpret_cast<uint8_t*>(::malloc(m_ContentSize));
+  } else {
+    if (payloadDataSize > m_ContentSize) {
+        printf("%s: re-allocating %d\n", __FUNCTION__, payloadDataSize);
+        m_ContentSize = payloadDataSize;
+        m_Content = reinterpret_cast<uint8_t*>(::realloc(m_Content, m_ContentSize));
+    }
+  }
+  ::memcpy(m_Content, payloadData,  payloadDataSize);
+
   MEMCPY(&oAESContext.qwInitializationVector, ivData, f_cbIV);
-  ChkDR(Drm_Reader_Decrypt(&m_oDecryptContext, &oAESContext, (DRM_BYTE *) payloadData,  payloadDataSize));
-     
+  ChkDR(Drm_Reader_Decrypt(&m_oDecryptContext, &oAESContext, (DRM_BYTE *) m_Content,  payloadDataSize));
+
   // Call commit during the decryption of the first sample.
   if (!m_fCommit) {
     ChkDR(Drm_Reader_Commit(m_poAppContext, _PolicyCallback, NULL));
     m_fCommit = TRUE;
-  } 
+  }
   // Return clear content.
   *f_pcbOpaqueClearContent = payloadDataSize;
-  *f_ppbOpaqueClearContent = (uint8_t *)payloadData;
+  *f_ppbOpaqueClearContent = (uint8_t *)m_Content;
   status = CDMi_SUCCESS;
 
   return status;
