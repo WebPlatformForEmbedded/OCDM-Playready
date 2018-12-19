@@ -433,12 +433,10 @@ CDMi_RESULT MediaKeySession::Decrypt(
   }
 
   if (!m_Content) {
-    printf("%s: allocating %d\n", __FUNCTION__, payloadDataSize);
     m_ContentSize = payloadDataSize;
     m_Content = reinterpret_cast<uint8_t*>(::malloc(m_ContentSize));
   } else {
     if (payloadDataSize > m_ContentSize) {
-        printf("%s: re-allocating %d\n", __FUNCTION__, payloadDataSize);
         m_ContentSize = payloadDataSize;
         m_Content = reinterpret_cast<uint8_t*>(::realloc(m_Content, m_ContentSize));
     }
