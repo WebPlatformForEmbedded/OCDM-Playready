@@ -117,6 +117,16 @@ CDMi_RESULT MediaKeySession::SetDrmHeader(const uint8_t drmHeader[], uint32_t dr
     return CDMi_SUCCESS;
 }
 
+static void DumpBuffer(const void * ptr, uint32_t size, const char name[])
+{
+   const uint8_t * bytePtr = static_cast<const uint8_t *>(ptr);
+   fprintf(stderr, "%s: ", name);
+   for (int i = 0; i < size; i++) {
+      fprintf(stderr, "%02x", bytePtr[i]);
+   }
+   fprintf(stderr, "\n");
+}
+
 CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint32_t licenseDataSize, uint8_t * secureStopId)
 {
     // open scope for DRM_APP_CONTEXT mutex
@@ -170,6 +180,9 @@ CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint3
     mSecureStopId.clear();
     mSecureStopId.resize(TEE_SESSION_ID_LEN);
     mSecureStopId.assign(secureStopId, secureStopId + TEE_SESSION_ID_LEN);
+
+    DumpBuffer(secureStopId, TEE_SESSION_ID_LEN, "secureStopId");
+    DumpBuffer(m_rgchSessionID, sizeof(m_rgchSessionID), "sessionId");
 
     // All done.
     return CDMi_SUCCESS;
