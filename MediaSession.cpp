@@ -73,7 +73,11 @@ const DRM_WCHAR g_rgwchCDMDrmStoreName[] = {WCHAR_CAST('/'), WCHAR_CAST('t'), WC
 const DRM_CONST_STRING g_dstrCDMDrmStoreName = CREATE_DRM_STRING(g_rgwchCDMDrmStoreName);
 
 #ifdef PR_3_3
+#ifdef NETFLIX
 const DRM_CONST_STRING *g_rgpdstrRights[1] = {&g_dstrDRM_RIGHT_PLAYBACK};
+#else
+const DRM_CONST_STRING *g_rgpdstrRights[1] = {&g_dstrWMDRM_RIGHT_PLAYBACK};
+#endif
 #else
 const DRM_CONST_STRING *g_rgpdstrRights[1] = {&g_dstrWMDRM_RIGHT_PLAYBACK};
 #endif
@@ -361,7 +365,11 @@ bool MediaKeySession::playreadyGenerateKeyRequest() {
                         DRM_NO_OF(g_rgpdstrRights),
                         _PolicyCallback,
                         nullptr,
+#ifdef NETFLIX
                         &m_oDecryptContext);
+#else
+                        m_oDecryptContext);
+#endif
 #endif
 
   // FIXME :  Check add case Play rights already acquired
@@ -544,11 +552,13 @@ CDMi_RESULT MediaKeySession::Decrypt(
         return CDMi_S_FALSE;
     }
     
-    DRM_RESULT err = DRM_SUCCESS;
+    DRM_RESULT dr = DRM_SUCCESS;
+    DRM_AES_COUNTER_MODE_CONTEXT ctrContext = { 0 };
+    DRM_DWORD rgdwMappings[2];
+
     if (!initWithLast15) {
 /* PRv3.3 support */
 #ifdef PR_3_3
-      DRM_DWORD rgdwMappings[2];
       if( f_pcbOpaqueClearContent == NULL || f_ppbOpaqueClearContent == NULL )
       {
           dr = DRM_E_INVALIDARG;
@@ -561,27 +571,29 @@ CDMi_RESULT MediaKeySession::Decrypt(
       ChkBOOL(m_eKeyState == KEY_READY, DRM_E_INVALIDARG);
       ChkArg(f_pbIV != NULL && f_cbIV == sizeof(DRM_UINT64));
 #else
-      err = Drm_Reader_InitDecrypt(m_oDecryptContext, nullptr, 0);
+      dr = Drm_Reader_InitDecrypt(m_oDecryptContext, nullptr, 0);
 #endif
-    } else {
+    }
+#ifdef NETFLIX
+    else {
         // Initialize the decryption context for Cocktail packaged
         // content. This is a no-op for AES packaged content.
         if (payloadDataSize <= 15)
         {
-            err = Drm_Reader_InitDecrypt(m_oDecryptContext, (DRM_BYTE*)payloadData, payloadDataSize);
+            dr = Drm_Reader_InitDecrypt(m_oDecryptContext, (DRM_BYTE*)payloadData, payloadDataSize);
         }
         else
         {
-            err = Drm_Reader_InitDecrypt(m_oDecryptContext, (DRM_BYTE*)(payloadData + payloadDataSize - 15), payloadDataSize);
+            dr = Drm_Reader_InitDecrypt(m_oDecryptContext, (DRM_BYTE*)(payloadData + payloadDataSize - 15), payloadDataSize);
         }
     }
-    if (DRM_FAILED(err))
+#endif
+    if (DRM_FAILED(dr))
     {
         fprintf(stderr, "Failed to init decrypt\n");
         return CDMi_S_FALSE;
     }
 
-    DRM_AES_COUNTER_MODE_CONTEXT ctrContext = { 0 };
     // TODO: can be done in another way (now abusing "initWithLast15" variable)
     if (initWithLast15) {
         // Netflix case
@@ -600,8 +612,9 @@ CDMi_RESULT MediaKeySession::Decrypt(
        MEMCPY(&ctrContext.qwInitializationVector, f_pbIV, f_cbIV);
     }
 
+/* PRv3.3 support */
 #ifdef PR_3_3
-    if ( NULL == f_pdwSubSampleMapping )
+   if ( NULL == f_pdwSubSampleMapping )
     {
         rgdwMappings[0] = 0;
         rgdwMappings[1] = payloadDataSize;
@@ -609,18 +622,31 @@ CDMi_RESULT MediaKeySession::Decrypt(
         f_cdwSubSampleMapping = NO_OF(rgdwMappings);
     }
 
+    if( f_pcbOpaqueClearContent != NULL )
+    {
+        *f_pcbOpaqueClearContent = 0;
+    }
+    if( f_ppbOpaqueClearContent != NULL )
+    {
+        *f_ppbOpaqueClearContent = NULL;
+    }
+
     ChkDR(Drm_Reader_DecryptOpaque(
+#ifdef NETFLIX
         &m_oDecryptContext,
+#else
+        m_oDecryptContext,
+#endif
         f_cdwSubSampleMapping,
         reinterpret_cast<const DRM_DWORD*>(f_pdwSubSampleMapping),
-        oAESContext.qwInitializationVector,
+        ctrContext.qwInitializationVector,
         payloadDataSize,
         (DRM_BYTE *) payloadData,
         reinterpret_cast<DRM_DWORD*>(f_pcbOpaqueClearContent),
         reinterpret_cast<DRM_BYTE**>(f_ppbOpaqueClearContent)));
 #else
-    err = Drm_Reader_Decrypt(m_oDecryptContext, &ctrContext, (DRM_BYTE*)payloadData, payloadDataSize);
-    if (DRM_FAILED(err))
+    dr = Drm_Reader_Decrypt(m_oDecryptContext, &ctrContext, (DRM_BYTE*)payloadData, payloadDataSize);
+    if (DRM_FAILED(dr))
     {
         fprintf(stderr, "Failed to run Drm_Reader_Decrypt\n");
         return CDMi_S_FALSE;
@@ -629,8 +655,7 @@ CDMi_RESULT MediaKeySession::Decrypt(
 
     // Call commit during the decryption of the first sample.
     if (!m_fCommit) {
-        //err = Drm_Reader_Commit(m_poAppContext, &opencdm_output_levels_callback, &levels_);
-        err = Drm_Reader_Commit(m_poAppContext, _PolicyCallback, nullptr); // TODO: pass along user data
+        ChkDR(Drm_Reader_Commit(m_poAppContext, _PolicyCallback, nullptr)); // TODO: pass along user data
         m_fCommit = TRUE;
     }
 
@@ -640,17 +665,13 @@ CDMi_RESULT MediaKeySession::Decrypt(
     *f_ppbOpaqueClearContent = (uint8_t *)payloadData;
 #endif
 
-/* PRv3.3 support */
-#ifdef PR_3_3
-        if( f_pcbOpaqueClearContent != NULL )
-          {
-              *f_pcbOpaqueClearContent = 0;
-          }
-          if( f_ppbOpaqueClearContent != NULL )
-          {
-              *f_ppbOpaqueClearContent = NULL;
-          }
-#endif
+ErrorExit:
+    if (DRM_FAILED(dr)) {
+      const DRM_CHAR* description;
+      DRM_ERR_GetErrorNameFromCode(dr, &description);
+      printf("playready error on Decrypt: %s\n", description);
+      return CDMi_S_FALSE;
+    }
 
     return CDMi_SUCCESS;
 }
@@ -662,7 +683,6 @@ CDMi_RESULT MediaKeySession::ReleaseClearContent(
     uint8_t  *f_pbClearContentOpaque ) {
 
   return CDMi_SUCCESS;
-
 }
 
 }  // namespace CDMi
