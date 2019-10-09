@@ -307,6 +307,8 @@ MediaKeySession::~MediaKeySession(void) {
   if (DRM_REVOCATION_IsRevocationSupported())
     SAFE_OEM_FREE(m_pbRevocationBuffer);
 
+  Drm_Uninitialize( m_poAppContext );
+
   SAFE_OEM_FREE(m_pbOpaqueBuffer);
   printf("Destructing PlayReady Session [%p]\n", this);
 }
