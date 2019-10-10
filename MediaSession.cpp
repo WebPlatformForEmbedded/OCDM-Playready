@@ -283,27 +283,8 @@ ErrorExit:
 }
 
 MediaKeySession::~MediaKeySession(void) {
-  m_eKeyState = KEY_CLOSED;
-
-  if (m_oDecryptContext) {
-    delete m_oDecryptContext;
-    m_oDecryptContext = nullptr;
-  }
-
-  SAFE_OEM_FREE(m_pbChallenge);
-  SAFE_OEM_FREE(m_pchSilentURL);
-
-  if (DRM_REVOCATION_IsRevocationSupported())
-    SAFE_OEM_FREE(m_pbRevocationBuffer);
-
-  SAFE_OEM_FREE(m_pbOpaqueBuffer);
+  Close();
   printf("Destructing PlayReady Session [%p]\n", this);
-}
-
-void MediaKeySession::UninitializeContext() {
-  Drm_Uninitialize(m_poAppContext);
-  
-  SAFE_OEM_FREE(m_poAppContext);
 }
 
 const char *MediaKeySession::GetSessionId(void) const {
@@ -494,7 +475,40 @@ CDMi_RESULT MediaKeySession::Remove(void) {
 }
 
 CDMi_RESULT MediaKeySession::Close(void) {
-  return CDMi_S_FALSE;
+  m_eKeyState = KEY_CLOSED;
+
+  if (DRM_REVOCATION_IsRevocationSupported() && m_pbRevocationBuffer != nullptr) {
+    SAFE_OEM_FREE(m_pbRevocationBuffer);
+    m_pbRevocationBuffer = nullptr;
+  }
+
+  if (m_poAppContext != nullptr) {
+      Drm_Uninitialize(m_poAppContext);
+      SAFE_OEM_FREE(m_poAppContext);
+      m_poAppContext = nullptr;
+  }
+
+  if (m_pbOpaqueBuffer != nullptr) {
+    SAFE_OEM_FREE(m_pbOpaqueBuffer);
+    m_pbOpaqueBuffer = nullptr;
+  }
+
+  if (m_oDecryptContext != nullptr) {
+    delete m_oDecryptContext;
+    m_oDecryptContext = nullptr;
+  }
+
+  if (m_pbChallenge != nullptr) {
+      SAFE_OEM_FREE(m_pbChallenge);
+      m_pbChallenge = nullptr;
+  }
+
+  if (m_pchSilentURL != nullptr) {
+      SAFE_OEM_FREE(m_pchSilentURL);
+      m_pchSilentURL = nullptr;
+  }
+
+  return CDMi_SUCCESS;
 }
 
 CDMi_RESULT MediaKeySession::Decrypt(
