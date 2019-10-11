@@ -482,7 +482,7 @@ CDMi_RESULT MediaKeySession::Close(void) {
     m_pbRevocationBuffer = nullptr;
   }
 
-  if (m_poAppContext != nullptr) {
+  if (m_poAppContext != nullptr && mInitiateChallengeGeneration == true /* This indicates if app context was created by this session or system's one was used. */) {
       Drm_Uninitialize(m_poAppContext);
       SAFE_OEM_FREE(m_poAppContext);
       m_poAppContext = nullptr;
