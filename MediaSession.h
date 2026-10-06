@@ -17,6 +17,8 @@
 
 #pragma once
 
+#define MODULE_NAME OCDM_Playready
+
 #include <drmbuild_oem.h>
 #include <drmmanager.h>
 #include <drmmathsafe.h>
@@ -32,17 +34,18 @@
 #endif
 #include <drmerr.h>
 #include <drmerror.h>
-#if defined(PR_3_3)
 #include <drmversionconstants.h>
-#endif
 
 #undef __in
 #undef __out
 
+#undef __reserved
+
 #include <string.h>
 #include <memory>
-//#include <cdmi.h>
 #include <interfaces/IDRM.h>
+
+#include <core/core.h>
 
 namespace CDMi {
 
@@ -87,7 +90,7 @@ private:
 public:
     //static const std::vector<std::string> m_mimeTypes;
 
-    MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_APP_CONTEXT * poAppContext, bool initiateChallengeGeneration = false);
+    MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_APP_CONTEXT * poAppContext, bool initWithLast15, bool initiateChallengeGeneration = false);
     ~MediaKeySession();
 
     bool playreadyGenerateKeyRequest();
@@ -112,11 +115,11 @@ public:
     virtual CDMi_RESULT Decrypt(
     const uint8_t *f_pbSessionKey,
     uint32_t f_cbSessionKey,
-    const uint32_t *f_pdwSubSampleMapping,
-    uint32_t f_cdwSubSampleMapping,
+    const EncryptionScheme encryptionScheme,
+    const EncryptionPattern& pattern,
     const uint8_t *f_pbIV,
     uint32_t f_cbIV,
-    const uint8_t *f_pbData,
+    uint8_t *f_pbData,
     uint32_t f_cbData,
     uint32_t *f_pcbOpaqueClearContent,
     uint8_t **f_ppbOpaqueClearContent,
@@ -143,9 +146,8 @@ private:
 
 
     static DRM_RESULT DRM_CALL _PolicyCallback(const DRM_VOID *, DRM_POLICY_CALLBACK_TYPE f_dwCallbackType, 
-#ifdef PR_3_3
-    const DRM_KID *, const DRM_LID *,
-#endif
+    const DRM_KID *,
+    const DRM_LID *,
     const DRM_VOID *);
 
     DRM_BYTE *m_pbOpaqueBuffer;
@@ -160,6 +162,15 @@ private:
     DRM_CHAR *m_pchSilentURL;  
     std::string m_customData;
     IMediaKeySessionCallback *m_piCallback;
+    void CleanLicenseStore(DRM_APP_CONTEXT *pDrmAppCtx);
+
+    inline void PrintBase64(const int32_t length, const uint8_t* data, const char id[])
+    {
+        std::string base64, hex;
+        Thunder::Core::ToString(data, length, true, base64);
+        Thunder::Core::ToHexString(data, length, hex);
+        fprintf(stderr, "%s: %s\t[%s]", id, base64.c_str(), hex.c_str());
+    }
 
 private:
     std::vector<uint8_t> mDrmHeader;
@@ -168,7 +179,9 @@ private:
     std::unique_ptr<LicenseResponse> mLicenseResponse;
     std::vector<uint8_t> mSecureStopId;
     PlayLevels levels_;
+    bool mInitWithLast15;
     bool mInitiateChallengeGeneration;
+    DRM_ID mBatchId;
 
 protected:
     DRM_BOOL m_fCommit;
